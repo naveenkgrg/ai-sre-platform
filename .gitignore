@@ -1,0 +1,29 @@
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# Keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# VS Code local settings
+.vscode/
+
+# Logs
+*.log
+
+# Local data
+data/local/
+tmp/
