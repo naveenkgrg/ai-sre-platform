@@ -1,5 +1,8 @@
 import asyncio
 from contextlib import suppress
+import json
+import logging
+from time import perf_counter
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -8,6 +11,35 @@ from pydantic import BaseModel
 # Create the FastAPI application.
 # This is the service our client will call.
 app = FastAPI()
+logger = logging.getLogger(__name__)
+MODEL_NAME = "qwen3:0.6b"
+
+
+def log_generate_request(
+    started_at: float,
+    status_code: int,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> None:
+    duration_ms = round((perf_counter() - started_at) * 1000, 2)
+    output_tokens_per_second = (
+        round(output_tokens / (duration_ms / 1000), 2)
+        if output_tokens is not None and duration_ms > 0
+        else None
+    )
+    logger.info(
+        json.dumps(
+            {
+                "event": "generate_request",
+                "model": MODEL_NAME,
+                "http_status": status_code,
+                "duration_ms": duration_ms,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "output_tokens_per_second": output_tokens_per_second,
+            }
+        )
+    )
 
 
 # Define the JSON request format.
@@ -24,6 +56,7 @@ class PromptRequest(BaseModel):
 # POST http://localhost:8000/generate
 @app.post("/generate")
 async def generate(req: PromptRequest, request: Request):
+    started_at = perf_counter()
 
     # Call the Ollama API running locally on port 11434.
     # FastAPI acts as a wrapper/service layer around the LLM.
@@ -34,7 +67,7 @@ async def generate(req: PromptRequest, request: Request):
                     "http://localhost:11434/api/generate",
                     json={
                         # Local model we downloaded earlier.
-                        "model": "qwen3:0.6b",
+                        "model": MODEL_NAME,
 
                         # Send the user prompt to the model.
                         "prompt": req.prompt,
@@ -56,6 +89,7 @@ async def generate(req: PromptRequest, request: Request):
                         ollama_request.cancel()
                         with suppress(asyncio.CancelledError):
                             await ollama_request
+                        log_generate_request(started_at, status_code=499)
                         raise HTTPException(
                             status_code=499,
                             detail="Client disconnected before LLM inference completed",
@@ -69,24 +103,43 @@ async def generate(req: PromptRequest, request: Request):
                 ollama_request.cancel()
                 with suppress(asyncio.CancelledError):
                     await ollama_request
+                log_generate_request(started_at, status_code=499)
                 raise
     except httpx.TimeoutException:
+        log_generate_request(started_at, status_code=504)
         raise HTTPException(
             status_code=504,
             detail="LLM inference timed out",
         )
+    except HTTPException:
+        raise
+    except Exception:
+        log_generate_request(started_at, status_code=500)
+        raise
 
-    # Convert Ollama's JSON response into a Python dictionary.
-    data = ollama_response.json()
+    try:
+        # Convert Ollama's JSON response into a Python dictionary.
+        data = ollama_response.json()
 
-    # Return only the fields we care about.
-    # FastAPI automatically converts this dictionary back to JSON.
-    return {
-        "response": data["response"],
-        "input_tokens": data["prompt_eval_count"],
-        "output_tokens": data["eval_count"],
-        "total_duration": data["total_duration"]
-    }
+        # Return only the fields we care about.
+        # FastAPI automatically converts this dictionary back to JSON.
+        response = {
+            "response": data["response"],
+            "input_tokens": data["prompt_eval_count"],
+            "output_tokens": data["eval_count"],
+            "total_duration": data["total_duration"],
+        }
+    except Exception:
+        log_generate_request(started_at, status_code=500)
+        raise
+    log_generate_request(
+        started_at,
+        status_code=200,
+        input_tokens=response["input_tokens"],
+        output_tokens=response["output_tokens"],
+    )
+    return response
+
 
 @app.get("/health")
 def health():
