@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import requests
+from fastapi import HTTPException
 
 # Create the FastAPI application.
 # This is the service our client will call.
@@ -24,23 +25,30 @@ def generate(req: PromptRequest):
 
     # Call the Ollama API running locally on port 11434.
     # FastAPI acts as a wrapper/service layer around the LLM.
-    ollama_response = requests.post(
-        "http://localhost:11434/api/generate",
-        json={
-            # Local model we downloaded earlier.
-            "model": "qwen3:0.6b",
+    try:
+        ollama_response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                # Local model we downloaded earlier.
+                "model": "qwen3:0.6b",
 
-            # Send the user prompt to the model.
-            "prompt": req.prompt,
+                # Send the user prompt to the model.
+                "prompt": req.prompt,
 
-            # Return the full response in one result.
-            # Later we will change this to streaming.
-            "stream": False,
+                # Return the full response in one result.
+                # Later we will change this to streaming.
+                "stream": False,
 
-            # Disable extra reasoning output for this experiment.
-            "think": False
-        }
-    )
+                # Disable extra reasoning output for this experiment.
+                "think": False
+            },
+            timeout=30
+        )
+    except requests.exceptions.Timeout:
+        raise HTTPException(
+            status_code=504,
+            detail="LLM inference timed out"
+        )
 
     # Convert Ollama's JSON response into a Python dictionary.
     data = ollama_response.json()
