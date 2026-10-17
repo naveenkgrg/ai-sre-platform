@@ -10,6 +10,10 @@ services:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
+    # Keep the webhook token outside Compose and Git. Grafana expands it while
+    # reading alerting provisioning files.
+    env_file:
+      - ./.env
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin

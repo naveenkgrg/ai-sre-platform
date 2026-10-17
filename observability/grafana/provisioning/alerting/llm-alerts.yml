@@ -1,0 +1,100 @@
+# Grafana Alerting provisioning. Keep the rule and receiver UIDs stable: they
+# match the previously tested UI-created resources and prevent duplicate rules
+# when an existing grafana-data volume is reused.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: llm-monitoring
+    folder: AI Observability
+    interval: 1m
+    rules:
+      - uid: dg1g374u3fqpsf
+        title: High LLM Timeout Rate
+        condition: C
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: |-
+                (
+                  100 *
+                  sum(increase(llm_requests_total{http_status="504"}[5m]))
+                  /
+                  clamp_min(sum(increase(llm_requests_total[5m])), 1)
+                )
+                and
+                (
+                  sum(increase(llm_requests_total[5m])) >= 5
+                )
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: C
+            queryType: expression
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 20
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        for: 1m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          description: More than 20% of LLM requests timed out in the last 5 minutes, with at least 5 requests received.
+          summary: LLM timeout rate exceeded 20%
+        # These labels intentionally reproduce the existing UI-created rule.
+        labels:
+          service: llm-api
+        isPaused: false
+        # This is the existing rule-level notification route. It sends this
+        # rule directly to the named contact point rather than through the
+        # global notification-policy tree.
+        notification_settings:
+          receiver: Mac Desktop Notifications
+
+contactPoints:
+  - orgId: 1
+    name: Mac Desktop Notifications
+    receivers:
+      - uid: cg1g8mwzdtssge
+        type: webhook
+        disableResolveMessage: false
+        settings:
+          url: http://host.docker.internal:8001/notify
+          httpMethod: POST
+          authorization_scheme: Bearer
+        secure_settings:
+          # Grafana recognizes this webhook setting as sensitive and encrypts
+          # it in its database. It is supplied by observability/.env at
+          # container start and is never committed.
+          authorization_credentials: $GRAFANA_WEBHOOK_TOKEN

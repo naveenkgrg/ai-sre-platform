@@ -81,3 +81,47 @@ docker compose -f observability/docker-compose.yml up -d --force-recreate grafan
 ```
 
 Open the dashboard and select a model if needed. It covers totals, successes, timeouts, latency, status rates, and throughput.
+
+## Reproducible Grafana alerting and macOS notifications
+
+`observability/grafana/provisioning/alerting/llm-alerts.yml` is the Monitoring-as-Code definition for the already-tested alert:
+
+- folder **AI Observability**, group **llm-monitoring**;
+- rule UID `dg1g374u3fqpsf`, evaluated every minute and pending for one minute;
+- a five-minute timeout percentage (`504` requests / all requests), gated by at least five requests, then firing only above 20%;
+- direct rule-level route to contact point **Mac Desktop Notifications** (receiver UID `cg1g8mwzdtssge`), which POSTs to `http://host.docker.internal:8001/notify` and includes resolved alerts.
+
+The stable UIDs reproduce the existing UI-created objects when the current `grafana-data` volume is reused, rather than creating a second alert or contact point. The direct receiver is intentional: Grafana bypasses the global notification-policy tree for this alert, so no broad default route is changed.
+
+### Supply the secret without committing it
+
+Grafana cannot recover an existing contact-point credential in plaintext from its encrypted database. Use one newly generated token for both sides instead:
+
+```bash
+cp observability/.env.example observability/.env
+# Put the output of this command after GRAFANA_WEBHOOK_TOKEN= in observability/.env
+openssl rand -hex 32
+
+set -a
+source observability/.env
+set +a
+WEBHOOK_SECRET="$GRAFANA_WEBHOOK_TOKEN" \
+  python -m uvicorn notifications.macos_notifier:app --host 0.0.0.0 --port 8001
+```
+
+`observability/.env` is ignored by Git and is injected only into the Grafana container. The provisioning file references `$GRAFANA_WEBHOOK_TOKEN` through the webhook's `secure_settings.authorization_credentials`; Grafana recognizes that setting as sensitive and encrypts it in its own database without placing it in the repository. Then apply the definitions without deleting the persistent volume:
+
+```bash
+docker compose -f observability/docker-compose.yml up -d --force-recreate grafana
+```
+
+If the UI-created contact point used a token that is no longer known, this deliberate token rotation is required. Do not copy Grafana's encrypted credential into a file and do not add it to source control.
+
+### Verify the complete path
+
+1. Confirm the notifier is listening: `curl http://localhost:8001/docs` should return the FastAPI docs page.
+2. In Grafana, open **Alerting → Alert rules → AI Observability** and verify one **High LLM Timeout Rate** rule with the UID above. Its state can initially be `Normal (MissingSeries)` until Prometheus has samples; that is expected and is not a firing alert.
+3. Generate enough requests to satisfy the five-request guard, then induce/observe 504s. The rule is evaluated each minute and must remain above 20% for the one-minute pending period before it fires.
+4. Verify a macOS notification on firing and another on resolution. macOS may require enabling notifications for the terminal, Python, or automation host in **System Settings → Notifications**.
+
+Use Grafana's contact-point test only after the notifier has been started with the same token. A `2xx` response means Grafana delivered the webhook; the native notification additionally depends on macOS permission.

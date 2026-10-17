@@ -42,3 +42,23 @@ The dashboard needs a working Prometheus target and datasource `Prometheus` (UID
    ```
 
 The file provider refreshes every 10 seconds. A manual import can coexist with the managed dashboard; check **AI Observability**.
+
+## Grafana webhook returns HTTP 401
+
+The notifier requires exactly `Authorization: Bearer <token>`. In the Grafana webhook contact point, configure **Authentication scheme** as `Bearer` and put only the token value in **Credentials**—do not put `Bearer ` in the credentials field. The provisioned equivalent is `authorization_scheme: Bearer` plus `secureSettings.authorization_credentials: $GRAFANA_WEBHOOK_TOKEN`.
+
+The notifier's `WEBHOOK_SECRET` and Grafana's `GRAFANA_WEBHOOK_TOKEN` must be the same value. In the provisioning file, Grafana reads it from `secure_settings.authorization_credentials`. Reloading `observability/.env` does not change a running process; restart both the notifier and the Grafana container after rotating the token.
+
+## Grafana cannot reach the macOS notifier
+
+`localhost` inside Grafana's container is the container itself. On Docker Desktop for macOS, the provisioned contact point uses `http://host.docker.internal:8001/notify` to reach the notifier on the host. Confirm the notifier is listening on `0.0.0.0:8001`, not only a different loopback or port.
+
+On native Linux Docker, `host.docker.internal` may not exist. Use a host address reachable from the Grafana container (or add Docker's host-gateway mapping) and update the contact-point URL deliberately; do not change the Mac-specific provisioning value by accident.
+
+## Alert remains Normal (MissingSeries)
+
+This state means the rule does not yet have a series to evaluate, commonly because Prometheus has not scraped the API or there have been no requests. Check the `llm-api` target, send requests, then wait for the next scrape and one-minute rule evaluation. It is not equivalent to a firing timeout alert.
+
+## macOS notification does not appear
+
+First use Grafana's contact-point test and confirm the notifier returns `{"status":"ok"}`. Then check **System Settings → Notifications** and allow notifications for the terminal, Python, or automation process that ran `osascript`. Start the notifier from the logged-in desktop session; a background or remote session may not be allowed to present a native notification.

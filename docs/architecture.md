@@ -9,6 +9,11 @@ client --POST /generate--> FastAPI --HTTP--> Ollama (qwen3:0.6b)
                               ^
                               | scrape every 5 s
                          Prometheus <---- Grafana dashboard queries
+                              ^
+                              | alert rule: 5m timeout percentage
+                              v
+                         Grafana Alerting --authenticated webhook-->
+                         FastAPI notifier --osascript--> macOS notification
 ```
 
 FastAPI sends a non-streaming request to Ollama and returns the response, input/output token counts, and Ollama's reported total duration. Prometheus is outside that request path: it pulls `GET /metrics` every five seconds. Grafana queries Prometheus, not FastAPI.
@@ -28,3 +33,5 @@ FastAPI counters reset on an API restart. Prometheus history can also be lost be
 ## Timeout and cancellation paths
 
 The API uses `httpx.AsyncClient(timeout=1)`. If Ollama is slower, FastAPI records 504 and increments `llm_timeouts_total`. While waiting, it checks for client disconnects; if one is found, it cancels the HTTPX task and records 499 plus `llm_cancellations_total`. A disconnected caller cannot receive that 499 response.
+
+The notifier is a separate host process at `http://host.docker.internal:8001/notify`. Grafana reaches it from its Docker container, authenticating with `Authorization: Bearer <token>`. The notifier accepts only firing and resolved alert instances and invokes macOS `osascript` to display them.
