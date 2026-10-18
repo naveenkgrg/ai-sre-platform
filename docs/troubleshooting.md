@@ -8,10 +8,19 @@ If `docker compose` cannot connect to the Docker daemon, start Docker Desktop (o
 
 These are distinct outcomes:
 
-- **HTTP 504 / `llm_timeouts_total`**: Ollama did not complete before `httpx.AsyncClient(timeout=1)` expired.
+- **HTTP 504 / `llm_timeouts_total`**: Ollama exceeded an HTTPX phase timeout or the overall request deadline. Defaults are 2 seconds for connect, 10 seconds for write, 60 seconds for read, 5 seconds for pool acquisition, and 90 seconds overall.
 - **499 / `llm_cancellations_total`**: the caller disconnected or ASGI cancelled the handler, so FastAPI cancels the upstream task. The caller cannot receive the response.
 
-For frequent 504s, first check Ollama and the `qwen3:0.6b` model. The one-second threshold is deliberately strict; change it in `apps/api/main.py` only after choosing a service latency budget.
+For frequent 504s, first check Ollama and the `qwen3:0.6b` model. For a slower host, raise `OLLAMA_READ_TIMEOUT_SECONDS` and `OLLAMA_REQUEST_TIMEOUT_SECONDS` in the environment before starting the API. Keep a bounded overall timeout so stalled requests eventually release their upstream connection.
+
+## HTTP 503: circuit breaker open or inference queue full
+
+There are two possible HTTP 503 responses:
+
+- **Circuit breaker open**: five consecutive downstream HTTP 5xx responses, connection errors, or timeouts open the breaker. It rejects requests for 30 seconds so an unhealthy Ollama process is not overloaded further. Check `llm_circuit_breaker_state`: `1` means open and `2` means a single recovery probe is in progress.
+- **Inference queue full**: all `MAX_CONCURRENT_INFERENCE` slots are in use and the caller waited longer than `INFERENCE_QUEUE_TIMEOUT`. Check `llm_inference_queue_timeouts_total` and `llm_active_inference_requests`; adjust those settings only if Ollama and the host have capacity for more concurrent work.
+
+Frontend cancellations and downstream HTTP 4xx responses do not open the breaker. After the 30-second period, send one request: success closes the breaker, while a counted downstream failure reopens it.
 
 ## Interpreting Ollama runner CPU use
 

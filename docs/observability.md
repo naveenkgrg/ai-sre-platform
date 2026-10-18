@@ -51,7 +51,7 @@ Grafana has matching average- and P95-latency panels. Send a few requests before
 
 ## Timeouts and client cancellations
 
-Ollama responses taking over one second produce HTTP 504 and increment both metrics:
+Ollama requests that exceed an HTTPX phase timeout or the configured overall request deadline produce HTTP 504 and increment both metrics. The defaults are a 60-second read timeout and 90-second overall deadline:
 
 ```promql
 sum(llm_requests_total{http_status="504"})
@@ -69,6 +69,30 @@ curl --max-time 0.1 -X POST http://localhost:8000/generate \
 ```
 
 If FastAPI sees the disconnect before its upstream timeout, it records `llm_requests_total{http_status="499"}` and `llm_cancellations_total`. This is timing-sensitive; check the metric and API log, not curl output.
+
+## Inference queue backpressure
+
+Each API process permits three concurrent Ollama requests by default. Configure
+`MAX_CONCURRENT_INFERENCE` and `INFERENCE_QUEUE_TIMEOUT` (seconds) to suit the
+host. A request that cannot get a slot within the queue timeout receives HTTP
+503 and increments `llm_inference_queue_timeouts_total`; current slot use is
+reported by `llm_active_inference_requests`.
+
+## Circuit breaker
+
+Five consecutive downstream failures open the circuit breaker. The counted categories are visible in Prometheus:
+
+```promql
+sum by (reason) (llm_downstream_failures_total)
+```
+
+When open, `/generate` returns HTTP 503 immediately and does not call Ollama. Check its state with:
+
+```promql
+llm_circuit_breaker_state
+```
+
+`0` is closed, `1` is open, and `2` is half-open. The breaker stays open for 30 seconds, then permits one probe request. A successful probe closes it; a timeout, connection error, or downstream HTTP 5xx reopens it. Frontend cancellations and downstream HTTP 4xx responses do not contribute to the failure count.
 
 ## Dashboard provisioning check
 

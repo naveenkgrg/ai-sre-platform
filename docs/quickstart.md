@@ -28,7 +28,22 @@ curl -X POST http://localhost:8000/generate \
   -d '{"prompt":"Explain Kubernetes in one sentence."}'
 ```
 
-The generate request returns `response`, token counts, and `total_duration`. A 504 means Ollama exceeded the current one-second API timeout; see [troubleshooting](troubleshooting.md).
+The generate request returns `response`, token counts, and `total_duration`. A 504 means Ollama exceeded one of the API timeouts; see [troubleshooting](troubleshooting.md).
+
+The default timeouts allow for local `qwen3:0.6b` inference: a 2-second connection timeout, 10-second write timeout, 60-second read timeout, 5-second pool timeout, and a strict 90-second overall request limit. To override them for a slower host, set environment variables before starting Uvicorn:
+
+```bash
+export OLLAMA_READ_TIMEOUT_SECONDS=120
+export OLLAMA_REQUEST_TIMEOUT_SECONDS=150
+python -m uvicorn apps.api.main:app --reload --port 8000
+```
+
+The available variables are `OLLAMA_CONNECT_TIMEOUT_SECONDS`, `OLLAMA_WRITE_TIMEOUT_SECONDS`, `OLLAMA_READ_TIMEOUT_SECONDS`, `OLLAMA_POOL_TIMEOUT_SECONDS`, and `OLLAMA_REQUEST_TIMEOUT_SECONDS`. All values are positive seconds.
+
+The API also applies process-local backpressure before calling Ollama. Set
+`MAX_CONCURRENT_INFERENCE` to a positive integer (default `3`) and
+`INFERENCE_QUEUE_TIMEOUT` to a positive number of seconds (default `5`). A
+caller that cannot get an inference slot before this timeout receives HTTP 503.
 
 ## 2. Configure alert notifications
 
