@@ -8,6 +8,24 @@ observable alert path from Prometheus through Grafana to macOS notifications.
 This document is a checkpoint, not a replacement for the [quickstart](quickstart.md),
 [architecture](architecture.md), or [observability guide](observability.md).
 
+## Hands-on checkpoints
+
+Use these immutable commit links to follow the project in order. Check out a
+checkpoint with `git switch --detach <commit-id>`, complete or inspect that
+step, then move to the next one. Return to the current branch with
+`git switch main`.
+
+| Checkpoint | What you will have | Commit |
+|---|---|---|
+| 1. Local API | Minimal FastAPI wrapper around Ollama | [`7827a69`](https://github.com/naveenkgrg/ai-sre-platform/commit/7827a69c0555f1a8f98f65dc9672a799ced9bdc4) |
+| 2. Inference timeouts | HTTP timeout handling | [`0df6295`](https://github.com/naveenkgrg/ai-sre-platform/commit/0df6295b04e8bed3594425c459855b456b4db8e2) |
+| 3. Client cancellation | Upstream cancellation after client disconnect | [`fccbf63`](https://github.com/naveenkgrg/ai-sre-platform/commit/fccbf63b2de3fb01174d1ecd898a9072e3a1074d) |
+| 4. Request logging | Structured request logs | [`8375db7`](https://github.com/naveenkgrg/ai-sre-platform/commit/8375db725e4a02777b642bd753ddc75e5c7a5d4d) |
+| 5. API metrics | Prometheus metrics endpoint and instrumentation | [`90229c3`](https://github.com/naveenkgrg/ai-sre-platform/commit/90229c3218d743060980c53d052152bab563cdba) |
+| 6. Monitoring stack | Prometheus and Grafana local stack | [`24637c5`](https://github.com/naveenkgrg/ai-sre-platform/commit/24637c5e3da54473a66e9ca10c067dd615498984) |
+| 7. Alerting | Grafana timeout alert and macOS notifications | [`82c0a2e`](https://github.com/naveenkgrg/ai-sre-platform/commit/82c0a2ee6c2da9b1c4b4293ab5267b38e60b0746) |
+| 8. Reliability controls | Circuit breaker, queue backpressure, tests, and final phase docs | [`b1dab1c`](https://github.com/naveenkgrg/ai-sre-platform/commit/b1dab1c65f83418ceed4f2f4e7447ddfa414f5df) |
+
 ## Verified implementation and configuration
 
 The API reads `OLLAMA_GENERATE_URL`, defaulting to
